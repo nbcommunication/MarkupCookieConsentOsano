@@ -1,0 +1,173 @@
+<?php
+
+/**
+ * Markup Cookie Consent
+ *
+ * #pw-summary Configure and implement Cookie Consent by Osano (https://cookieconsent.osano.com/).
+ *
+ * @copyright 2019 NB Communication Ltd
+ * @license Mozilla Public License v2.0 http://mozilla.org/MPL/2.0/
+ *
+ * @property string $position
+ * @property string $theme
+ * @property string $banner
+ * @property string $bannerText
+ * @property string $button
+ * @property string $buttonText
+ * @property int $linkInt
+ * @property string $linkExt
+ * @property string $type
+ * @property string $textMessage
+ * @property string $textDismiss
+ * @property string $textPolicy
+ * @property string $textDeny
+ * @property string $textAllow
+ * @property bool $noScript
+ *
+ */
+
+class MarkupCookieConsent extends WireData implements Module {
+
+	/**
+	 * getModuleInfo is a module required by all modules to tell ProcessWire about them
+	 *
+	 * @return array
+	 *
+	 */
+	public static function getModuleInfo() {
+
+		return [
+			"title" => "Markup Cookie Consent",
+			"version" => 001,
+			"summary" => "Configure and implement Cookie Consent by Osano (https://cookieconsent.osano.com/)",
+			"author" => "chriswthomson",
+			"href" => "https://github.com/chriswthomson/MarkupCookieConsent",
+			"singular" => true,
+			"autoload" => "template!=admin",
+			"icon" => "thumbs-up",
+		];
+	}
+
+	/**
+	 * CDN JS Style
+	 *
+	 */
+	const cdnStyle = "<link " . 
+		"rel='stylesheet' " . 
+		"href='https://cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.1.1/cookieconsent.min.css' " . 
+		"integrity='sha256-zQ0LblD/Af8vOppw18+2anxsuaz3pWYyVWi+bTvTH8Q=' " . 
+		"crossorigin='anonymous'>";
+
+	/**
+	 * CDN JS Script
+	 *
+	 */
+	const cdnScript = "<script " . 
+		"src='https://cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.1.1/cookieconsent.min.js' " . 
+		"integrity='sha256-5VhCqFam2Cn+yjw61zbBNrbHVJ6SRydPeKopYlngbiQ=' " . 
+		"crossorigin='anonymous'></script>";
+
+	/**
+	 * The cookieconsent configuration options
+	 *
+	 * @var array
+	 *
+	 */
+	protected $options = [];
+
+	/**
+	 * Initialize the module
+	 *
+	 */
+	public function init() {
+
+		foreach(["position", "theme", "type"] as $key) {
+			$value = $this->get($key);
+			if($value) $this->options[$key] = $value;
+		}
+
+		$palette = [];
+		foreach(["popup", "button"] as $key) {
+
+			$value = $this->get($key);
+			$valueText = $this->get("{$key}Text");
+
+			if($this->theme == "wire" && $key == "button") {
+
+				if(isset($this->options["theme"])) unset($this->options["theme"]);
+
+				$palette[$key] = [
+					"background" => "transparent",
+					"border" => $value,
+					"text" => $value,
+				];
+
+			} else {
+
+				$palette[$key] = [
+					"background" => $value,
+				];
+
+				if($valueText) $palette[$key]["text"] = $valueText;
+			}
+		}
+		$this->options["palette"] = $palette;
+
+		$content = [];
+
+		$link = null;
+		if($this->linkInt) {
+			$link = $this->wire("pages")->get($this->linkInt)->url;
+		} else if($this->linkExt) {
+			$link = $this->linkExt;
+		}
+		if(isset($link)) $content["href"] = $link;
+
+		foreach(["message", "dismiss", "link", "deny", "allow"] as $key) {
+			$value = $this->get("text" . ucfirst($key));
+			if($value) $content[$key] = $value;
+		}
+
+		if(count($content)) $this->options["content"] = $content;
+
+	}
+
+	/**
+	 * When ProcessWire is ready
+	 *
+	 */
+	public function ready() {
+
+		// Add the tags to HTML pages
+		$this->wire->addHookAfter("Page::render", function(HookEvent $event) {
+
+			$page = $event->object;
+			$contentType = $page->template->contentType;
+
+			// If not an html page with a <head> element, return
+			if(
+				($contentType && $contentType !== "html") ||
+				stripos($event->return, "</html>") === false ||
+				stripos($event->return, "</head>") === false ||
+				stripos($event->return, "</body>") === false
+			) {
+				return;
+			}
+
+			// Append style to the <head>
+			$event->return = str_replace("</head>", "\n\t" . self::cdnStyle . "\n</head>", $event->return);
+
+			// Add configuration data-attribute
+			$script = self::cdnScript;
+			$script = str_replace("></", " data-cookieconsent='" . json_encode($this->options) . "'></", $script);
+
+			// Append init script
+			if(!$this->noScript) {
+				$script .= "<script src='" . $this->wire("config")->urls($this) . "{$this->className}.js'></script>";
+			}
+
+			// Append script to the <body>
+			$event->return = str_replace("</body>", "\n\t$script\n</body>", $event->return);
+		});
+	}
+}
